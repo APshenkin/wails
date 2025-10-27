@@ -79,6 +79,40 @@ func New(appOptions Options) *App {
 	result.customEventProcessor = NewWailsEventProcessor(result.Event.dispatch)
 
 	messageProc := NewMessageProcessor(result.Logger)
+
+	// Initialize transport (default to HTTP if not specified)
+	transport := appOptions.Transport
+	if transport == nil {
+		transport = NewHTTPTransport()
+	}
+
+	// Create transport handler that wraps the message processor
+	handler := &transportHandler{messageProcessor: messageProc}
+
+	// Start custom transport if provided
+	if appOptions.Transport != nil {
+		err := transport.Start(result.ctx, handler)
+		if err != nil {
+			result.fatal("failed to start custom transport: %w", err)
+		}
+		// Register shutdown task to stop transport
+		result.OnShutdown(func() {
+			if err := transport.Stop(); err != nil {
+				result.error("failed to stop custom transport: %w", err)
+			}
+		})
+
+		// Auto-wire events if transport supports event delivery
+		if eventTransport, ok := transport.(EventTransport); ok {
+			result.Event.On("*", func(event *CustomEvent) {
+				if err := eventTransport.SendEvent(event); err != nil {
+					result.Logger.Error("Failed to deliver event via transport", "error", err)
+				}
+			})
+			result.debug("Event auto-forwarding enabled for transport")
+		}
+	}
+
 	opts := &assetserver.Options{
 		Handler: appOptions.Assets.Handler,
 		Middleware: assetserver.ChainMiddleware(
@@ -138,6 +172,17 @@ func New(appOptions Options) *App {
 
 	result.assets = srv
 	result.assets.LogDetails()
+
+	// If transport implements AssetServerTransport, configure it to serve assets
+	if appOptions.Transport != nil {
+		if assetTransport, ok := transport.(AssetServerTransport); ok {
+			err := assetTransport.ServeAssets(srv)
+			if err != nil {
+				result.fatal("failed to configure transport for serving assets: %w", err)
+			}
+			result.info("Transport configured to serve assets")
+		}
+	}
 
 	result.bindings = NewBindings(appOptions.MarshalError, appOptions.BindAliases)
 	result.options.Services = slices.Clone(appOptions.Services)

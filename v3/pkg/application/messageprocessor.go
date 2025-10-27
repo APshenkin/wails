@@ -60,7 +60,13 @@ func (m *MessageProcessor) getTargetWindow(r *http.Request) (Window, string) {
 	}
 	windowID := r.Header.Get(webViewRequestHeaderWindowId)
 	if windowID == "" {
-		return nil, windowID
+		// No window specified - return the first available window
+		// This is useful for custom transports that don't have automatic window context
+		windows := globalApplication.Window.GetAll()
+		if len(windows) > 0 {
+			return windows[0], ""
+		}
+		return nil, ""
 	}
 	wID, err := strconv.ParseUint(windowID, 10, 64)
 	if err != nil {
@@ -109,7 +115,11 @@ func (m *MessageProcessor) HandleRuntimeCallWithIDs(rw http.ResponseWriter, r *h
 	params := QueryParams(r.URL.Query())
 
 	targetWindow, nameOrID := m.getTargetWindow(r)
-	if targetWindow == nil {
+
+	// Some operations (calls, events, application) don't require a window
+	// This is useful for browser-based deployments with custom transports
+	windowRequired := object != callRequest && object != eventsRequest && object != applicationRequest && object != systemRequest
+	if windowRequired && targetWindow == nil {
 		m.httpError(rw, "Invalid runtime call:", fmt.Errorf("window '%s' not found", nameOrID))
 		return
 	}
