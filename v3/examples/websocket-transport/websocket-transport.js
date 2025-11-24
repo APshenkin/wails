@@ -9,7 +9,7 @@
 
 console.log("[WebSocket Transport] Loading VERSION 5 - simplified");
 
-import { clientId } from "/wails/runtime.js";
+import { clientId, setTransport } from "/wails/runtime.js";
 
 /**
  * Generate a unique ID (simplified nanoid implementation)
@@ -244,3 +244,25 @@ export async function createWebSocketTransport(url, options = {}) {
   await transport.connect();
   return transport;
 }
+
+const wsTransport = await createWebSocketTransport("ws://localhost:9099/wails/ws", {
+  reconnectDelay: 2000,
+  requestTimeout: 30000
+});
+
+setTransport(wsTransport);
+
+// Monitor WebSocket connection status
+function updateConnectionStatus() {
+  const statusEl = document.getElementById("connection-status");
+
+  setInterval(() => {
+    if (wsTransport.isConnected()) {
+      statusEl.innerHTML = "<span class=\"status connected\">✓ Connected to WebSocket (ws://localhost:9099)</span>";
+    } else {
+      statusEl.innerHTML = "<span class=\"status disconnected\">✗ Disconnected</span>";
+    }
+  }, 1000);
+}
+
+updateConnectionStatus();

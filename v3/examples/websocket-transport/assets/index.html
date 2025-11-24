@@ -238,8 +238,8 @@
   try {
     // Import the custom WebSocket transport implementation with cache buster
     const timestamp = Date.now();
-    const { createWebSocketTransport } = await import(`/websocket-transport.js?v=${timestamp}`);
-    const { setTransport, Events, Dialogs } = await import("/wails/runtime.js");
+    await import(`/wails/transport.js?v=${timestamp}`);
+    const { Events, Dialogs } = await import("/wails/runtime.js");
 
     // Import generated bindings
     console.log("[Init] Importing bindings from /bindings/...");
@@ -247,21 +247,12 @@
     console.log("[Init] Bindings imported:", bindings);
     const { GreetService } = bindings;
 
-    // Create and configure WebSocket transport
-    const wsTransport = await createWebSocketTransport("ws://localhost:9099/wails/ws", {
-      reconnectDelay: 2000,
-      requestTimeout: 30000
-    });
-
     window.openDialog = async function openDialog() {
       document.getElementById("dialogResult").innerHTML = JSON.stringify(await Dialogs.OpenFile({
         CanChooseFiles: true,
         AllowsMultipleSelection: true
       }));
     };
-
-    // Set as the active transport
-    setTransport(wsTransport);
 
     console.log("✓ Using generated bindings for GreetService");
 
@@ -329,21 +320,6 @@
         document.getElementById("timeResult").textContent = "Error: " + err.message;
       }
     };
-
-    // Monitor WebSocket connection status
-    function updateConnectionStatus() {
-      const statusEl = document.getElementById("connection-status");
-
-      setInterval(() => {
-        if (wsTransport.isConnected()) {
-          statusEl.innerHTML = "<span class=\"status connected\">✓ Connected to WebSocket (ws://localhost:9099)</span>";
-        } else {
-          statusEl.innerHTML = "<span class=\"status disconnected\">✗ Disconnected</span>";
-        }
-      }, 1000);
-    }
-
-    updateConnectionStatus();
 
   } catch (err) {
     console.error("[Init] Failed to initialize:", err);
