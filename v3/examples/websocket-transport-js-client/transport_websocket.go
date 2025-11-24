@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"log"
 	"net/http"
 	"sync"
@@ -9,6 +10,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+//go:embed websocket-transport.js
+var jsClient []byte
 
 // WebSocketTransport is an example implementation of a WebSocket-based transport.
 // This demonstrates how to create a custom transport that can replace the default
@@ -112,6 +116,10 @@ func (w *WebSocketTransport) ServeAssets(assetHandler http.Handler) error {
 	}()
 
 	return nil
+}
+
+func (w *WebSocketTransport) JSClient() []byte {
+	return jsClient
 }
 
 // Stop gracefully shuts down the WebSocket server
