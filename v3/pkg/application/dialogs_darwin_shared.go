@@ -2,6 +2,8 @@
 
 package application
 
+import "strings"
+
 func addDialogCallback(callback dialogResultCallback) int {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -38,6 +40,24 @@ func newSaveFileDialogImpl(d *SaveFileDialogStruct) *macosSaveFileDialog {
 	return &macosSaveFileDialog{
 		dialog: d,
 	}
+}
+
+func saveDialogExtensions(filters []FileFilter) string {
+	var extensions []string
+	for _, filter := range filters {
+		for _, pattern := range strings.Split(filter.Pattern, ";") {
+			extension := strings.TrimPrefix(strings.TrimSpace(pattern), "*.")
+
+			// The panel appends the first extension to a bare filename, so "*.*" would
+			// turn "report" into "report.*"; a dotted one like "tar.gz" it cannot use at all.
+			if extension == "" || strings.ContainsAny(extension, "*?.") {
+				continue
+			}
+
+			extensions = append(extensions, extension)
+		}
+	}
+	return strings.Join(extensions, ";")
 }
 
 func removeDialogCallback(id int) {
