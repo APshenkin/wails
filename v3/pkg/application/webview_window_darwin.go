@@ -27,6 +27,7 @@ struct WebviewPreferences {
     bool *JavaScriptCanOpenWindowsAutomatically;
     double *MinimumFontSize;
     bool *EnableAutoplayWithoutUserAction;
+    int *InactiveSchedulingPolicy;
 };
 
 struct PanelPreferences {
@@ -143,6 +144,14 @@ void* windowNew(unsigned int id, int width, int height, bool fraudulentWebsiteWa
     if (preferences.TabFocusesLinks != NULL) {
 		config.preferences.tabFocusesLinks = *preferences.TabFocusesLinks;
 	}
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
+	if (@available(macOS 14.0, *)) {
+		if (preferences.InactiveSchedulingPolicy != NULL) {
+			config.preferences.inactiveSchedulingPolicy = (WKInactiveSchedulingPolicy)*preferences.InactiveSchedulingPolicy;
+		}
+	}
+#endif
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 110300
 	if (@available(macOS 11.3, *)) {
@@ -1613,6 +1622,11 @@ func (w *macosWebviewWindow) getWebviewPreferences() C.struct_WebviewPreferences
 	}
 	if wvprefs.EnableAutoplayWithoutUserAction.IsSet() {
 		result.EnableAutoplayWithoutUserAction = bool2CboolPtr(wvprefs.EnableAutoplayWithoutUserAction.Get())
+	}
+	if wvprefs.InactiveSchedulingPolicy != MacInactiveSchedulingPolicyDefault {
+		// Offset by 1 from WKInactiveSchedulingPolicy, like MacWindowTabbingMode: Suspend(1) -> 0, Throttle(2) -> 1, None(3) -> 2
+		v := C.int(wvprefs.InactiveSchedulingPolicy - 1)
+		result.InactiveSchedulingPolicy = &v
 	}
 
 	return result
