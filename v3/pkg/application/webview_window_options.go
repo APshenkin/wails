@@ -739,6 +739,23 @@ const (
 	MacWindowTabbingModeDisallowed
 )
 
+// MacInactiveSchedulingPolicy controls how WebKit schedules the web content process while the
+// webview is not visible (hidden window, minimised, occluded) on macOS 14+.
+// Values map to WKInactiveSchedulingPolicy (offset by 1 so the zero value is an "unset" sentinel).
+type MacInactiveSchedulingPolicy int
+
+const (
+	// MacInactiveSchedulingPolicyDefault is the zero-value sentinel meaning "not explicitly set".
+	// WebKit then applies its own default, which suspends the web content process of an invisible webview.
+	MacInactiveSchedulingPolicyDefault MacInactiveSchedulingPolicy = iota
+	// MacInactiveSchedulingPolicySuspend lets WebKit suspend the web content process while the webview is not visible
+	MacInactiveSchedulingPolicySuspend
+	// MacInactiveSchedulingPolicyThrottle keeps the web content process running at reduced priority while the webview is not visible
+	MacInactiveSchedulingPolicyThrottle
+	// MacInactiveSchedulingPolicyNone keeps the web content process scheduled normally while the webview is not visible
+	MacInactiveSchedulingPolicyNone
+)
+
 // MacWindowCollectionBehavior controls window behavior across macOS Spaces and fullscreen.
 // These correspond to NSWindowCollectionBehavior bitmask values and can be combined using bitwise OR.
 // For example: MacWindowCollectionBehaviorCanJoinAllSpaces | MacWindowCollectionBehaviorFullScreenAuxiliary
@@ -797,6 +814,9 @@ type MacWebviewPreferences struct {
 	// EnableAutoplayWithoutUserAction allows media to start playing automatically
 	// without requiring a user gesture. Maps to WKWebViewConfiguration.mediaTypesRequiringUserActionForPlayback.
 	EnableAutoplayWithoutUserAction optional.Bool
+	// InactiveSchedulingPolicy controls whether WebKit may suspend the web content process while the
+	// webview is not visible (macOS 14+). Maps to WKPreferences.inactiveSchedulingPolicy.
+	InactiveSchedulingPolicy MacInactiveSchedulingPolicy
 }
 
 // MacTitleBar contains options for the Mac titlebar
