@@ -685,6 +685,14 @@ func (w *macosWebviewWindow) createWindow(options WebviewWindowOptions) {
 	config.send("setUserContentController:", ucc)
 	ucc.send("release")
 
+	// WebKit latches this policy when the page is created: moved into
+	// applyWebviewPreferences, which runs after init, it would have no effect.
+	if policy := options.Mac.WebviewPreferences.InactiveSchedulingPolicy; policy != MacInactiveSchedulingPolicyDefault {
+		if wkPrefs := config.send("preferences"); respondsTo(wkPrefs, "setInactiveSchedulingPolicy:") { // macOS 14+
+			wkPrefs.send("setInactiveSchedulingPolicy:", int(policy-1))
+		}
+	}
+
 	webView := class("WKWebView").send("alloc").send("initWithFrame:configuration:",
 		rect(0, 0, CGFloat(width), CGFloat(height)), config)
 	w.wkWebView = unsafe.Pointer(webView.ptr())
