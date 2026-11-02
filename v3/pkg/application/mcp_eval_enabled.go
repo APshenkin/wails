@@ -116,6 +116,11 @@ func (m *mcpServer) handleEvalResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	m.deliver(result)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (m *mcpServer) deliver(result mcpEvalResult) {
 	m.pendingMu.Lock()
 	ch, ok := m.pending[result.ID]
 	if ok {
@@ -126,5 +131,18 @@ func (m *mcpServer) handleEvalResult(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		ch <- result
 	}
-	w.WriteHeader(http.StatusNoContent)
+}
+
+func deliverMCPEvalResult(payload string) {
+	server := activeMCPServer.Load()
+	if server == nil {
+		return
+	}
+
+	var result mcpEvalResult
+	if err := json.Unmarshal([]byte(payload), &result); err != nil {
+		server.logger.Warn("mcp: invalid eval result message", "error", err)
+		return
+	}
+	server.deliver(result)
 }

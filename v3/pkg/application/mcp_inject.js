@@ -725,6 +725,14 @@
 
     // ---------------------------------------------------------------- harness
 
+    // A page served over https cannot fetch the http loopback callback: WebKit blocks it as mixed content.
+    function nativePost() {
+        if (window.chrome?.webview?.postMessage) return (m) => window.chrome.webview.postMessage(m);
+        if (window.webkit?.messageHandlers?.external?.postMessage) return (m) => window.webkit.messageHandlers.external.postMessage(m);
+        if (window.wails?.invoke) return (m) => window.wails.invoke(m);
+        return null;
+    }
+
     // run executes fn and posts {id, ok, value|error} to the callback URL.
     // It never throws: all failures are reported through the callback.
     async function run(id, url, showCursor, fn) {
@@ -747,6 +755,11 @@
             };
         }
         try {
+            const post = nativePost();
+            if (post) {
+                post('wails:mcp:result:' + JSON.stringify(payload));
+                return;
+            }
             await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

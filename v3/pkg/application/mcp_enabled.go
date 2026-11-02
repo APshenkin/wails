@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -112,6 +113,7 @@ func startMCPServer(a *App) error {
 		pending:     make(map[string]chan mcpEvalResult),
 	}
 	server.registerTools()
+	activeMCPServer.Store(server)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", server.handleMCP)
@@ -140,6 +142,8 @@ func startMCPServer(a *App) error {
 		"url", fmt.Sprintf("http://%s/mcp", server.addr))
 	return nil
 }
+
+var activeMCPServer atomic.Pointer[mcpServer]
 
 func (m *mcpServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "" {
