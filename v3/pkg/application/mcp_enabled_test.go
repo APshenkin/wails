@@ -18,7 +18,7 @@ func newTestMCPServer() *mcpServer {
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		evalTimeout: time.Second,
 		addr:        "127.0.0.1:0",
-		pending:     make(map[string]chan mcpEvalResult),
+		pending:     make(map[string]mcpPendingEval),
 	}
 	m.registerTools()
 	return m
@@ -243,7 +243,7 @@ func TestMCPEvalResultDelivery(t *testing.T) {
 	id := "test-eval-id-12345"
 	ch := make(chan mcpEvalResult, 1)
 	m.pendingMu.Lock()
-	m.pending[id] = ch
+	m.pending[id] = mcpPendingEval{result: ch}
 	m.pendingMu.Unlock()
 
 	payload := `{"id":"test-eval-id-12345","ok":true,"value":42}`

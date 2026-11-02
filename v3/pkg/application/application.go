@@ -690,7 +690,7 @@ func (a *App) Run() error {
 		// All configuration is read from environment variables (WAILS_MCP_HOST,
 		// WAILS_MCP_PORT, WAILS_MCP_TIMEOUT, WAILS_MCP_HIDE_CURSOR).
 		if err := startMCPServer(a); err != nil {
-			return fmt.Errorf("mcp: %w", err)
+			a.warning("mcp: server not started: %v", err)
 		}
 
 		go func() {
@@ -855,6 +855,12 @@ func (a *App) handleWindowMessage(event *windowMessage) {
 
 	if !ok {
 		a.warning("WebviewWindow #%d not found", event.windowId)
+		return
+	}
+	if payload, ok := strings.CutPrefix(event.message, "wails:mcp:result:"); ok {
+		if runtime.GOOS != "darwin" || (event.originInfo != nil && event.originInfo.IsMainFrame) {
+			deliverMCPEvalResult(payload, window.ID())
+		}
 		return
 	}
 	// Check if the message starts with "wails:"
