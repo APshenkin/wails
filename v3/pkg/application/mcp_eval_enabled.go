@@ -29,7 +29,8 @@ type mcpEvalResult struct {
 	Error string          `json:"error"`
 }
 
-// callbackURL returns the URL the in-page script POSTs evaluation results to.
+// callbackURL returns the fallback URL the in-page script POSTs evaluation
+// results to when the page has no native message handler.
 // Wildcard bind addresses (0.0.0.0, ::) are normalised to localhost so the
 // URL is reachable from within the webview.
 func (m *mcpServer) callbackURL() string {
@@ -55,7 +56,7 @@ func (m *mcpServer) eval(window Window, body string, timeout time.Duration) (jso
 
 	ch := make(chan mcpEvalResult, 1)
 	m.pendingMu.Lock()
-	m.pending[id] = ch
+	m.pending[id] = mcpPendingEval{result: ch, windowID: window.ID()}
 	m.pendingMu.Unlock()
 	defer func() {
 		m.pendingMu.Lock()
@@ -116,24 +117,27 @@ func (m *mcpServer) handleEvalResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m.deliver(result)
+	m.deliver(result, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (m *mcpServer) deliver(result mcpEvalResult) {
+func (m *mcpServer) deliver(result mcpEvalResult, fromWindowID uint) {
 	m.pendingMu.Lock()
-	ch, ok := m.pending[result.ID]
+	pending, ok := m.pending[result.ID]
+	if ok && fromWindowID != 0 && pending.windowID != fromWindowID {
+		ok = false
+	}
 	if ok {
 		delete(m.pending, result.ID)
 	}
 	m.pendingMu.Unlock()
 
 	if ok {
-		ch <- result
+		pending.result <- result
 	}
 }
 
-func deliverMCPEvalResult(payload string) {
+func deliverMCPEvalResult(payload string, fromWindowID uint) {
 	server := activeMCPServer.Load()
 	if server == nil {
 		return
@@ -144,5 +148,5 @@ func deliverMCPEvalResult(payload string) {
 		server.logger.Warn("mcp: invalid eval result message", "error", err)
 		return
 	}
-	server.deliver(result)
+	server.deliver(result, fromWindowID)
 }

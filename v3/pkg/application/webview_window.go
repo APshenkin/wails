@@ -852,8 +852,6 @@ func (w *WebviewWindow) HandleMessage(message string) {
 				w.impl.execJS(js)
 			})
 		}
-	case strings.HasPrefix(message, "wails:mcp:result:"):
-		deliverMCPEvalResult(strings.TrimPrefix(message, "wails:mcp:result:"))
 	case strings.HasPrefix(message, "wails:event:emit:"):
 		// Forward an event from a page that can't reach the modern HTTP
 		// runtime (e.g. an InitialHTML pop-up loaded with `baseURL:nil`

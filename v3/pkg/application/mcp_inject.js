@@ -733,8 +733,8 @@
         return null;
     }
 
-    // run executes fn and posts {id, ok, value|error} to the callback URL.
-    // It never throws: all failures are reported through the callback.
+    // run executes fn and posts {id, ok, value|error} to the host.
+    // It never throws: all failures are reported the same way.
     async function run(id, url, showCursor, fn) {
         state.showCursor = !!showCursor;
         let payload;

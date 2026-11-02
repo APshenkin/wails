@@ -52,10 +52,17 @@ type mcpServer struct {
 	httpServer *http.Server
 
 	pendingMu sync.Mutex
-	pending   map[string]chan mcpEvalResult
+	pending   map[string]mcpPendingEval
 
 	tools []*mcpTool
 }
+
+type mcpPendingEval struct {
+	result   chan mcpEvalResult
+	windowID uint
+}
+
+var activeMCPServer atomic.Pointer[mcpServer]
 
 // startMCPServer reads configuration from environment variables, starts the
 // MCP HTTP listener and registers a shutdown hook. Called from App.Run().
@@ -110,7 +117,7 @@ func startMCPServer(a *App) error {
 		evalTimeout: evalTimeout,
 		addr:        listener.Addr().String(),
 		authToken:   token,
-		pending:     make(map[string]chan mcpEvalResult),
+		pending:     make(map[string]mcpPendingEval),
 	}
 	server.registerTools()
 	activeMCPServer.Store(server)
@@ -143,8 +150,6 @@ func startMCPServer(a *App) error {
 	return nil
 }
 
-var activeMCPServer atomic.Pointer[mcpServer]
-
 func (m *mcpServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "" {
 		http.NotFound(w, r)
@@ -162,9 +167,9 @@ func (m *mcpServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (m *mcpServer) failPending(err error) {
 	m.pendingMu.Lock()
 	defer m.pendingMu.Unlock()
-	for id, ch := range m.pending {
+	for id, pending := range m.pending {
 		select {
-		case ch <- mcpEvalResult{Ok: false, Error: err.Error()}:
+		case pending.result <- mcpEvalResult{Ok: false, Error: err.Error()}:
 		default:
 		}
 		delete(m.pending, id)
