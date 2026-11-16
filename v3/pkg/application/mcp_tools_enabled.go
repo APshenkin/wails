@@ -526,6 +526,38 @@ func (m *mcpServer) registerTools() {
 				return m.mcpEvalTool(args, fmt.Sprintf("return mcp.snapshot(%d);", mcpArgInt(args, "max_depth", 12)))
 			},
 		},
+		{
+			Name: "screenshot",
+			Description: "Capture a pixel screenshot of the window's visible web content as a PNG image. " +
+				"Use screenshot_dom when a structural outline is enough.",
+			Schema: mcpObjectSchema(nil, map[string]any{
+				"scale": mcpProp("number", "Output pixels per point of the web view, between 0.1 and 4. "+
+					"Defaults to 1; pass the display scale factor (2 on Retina) for full detail."),
+				"window":     mcpWindowProp(),
+				"timeout_ms": mcpTimeoutProp(),
+			}),
+			Handler: func(args map[string]any) (any, error) {
+				name, _ := mcpArgString(args, "window")
+				window, err := m.resolveWindow(name)
+				if err != nil {
+					return nil, err
+				}
+
+				scale, ok := mcpArgFloat(args, "scale")
+				if !ok {
+					scale = 1
+				}
+				if scale < 0.1 || scale > 4 {
+					return nil, errors.New("scale must be between 0.1 and 4")
+				}
+
+				png, err := mcpCaptureWindow(window, scale, m.mcpEvalTimeout(args))
+				if err != nil {
+					return nil, err
+				}
+				return mcpImage{MIMEType: "image/png", Data: png}, nil
+			},
+		},
 	}
 }
 

@@ -79,7 +79,7 @@ func TestMCPToolsList(t *testing.T) {
 	if !ok || len(tools) == 0 {
 		t.Fatalf("expected non-empty tools list, got %v", result)
 	}
-	// Verify the registry exposes exactly the expected 16 tools.
+	// Verify the registry exposes exactly the expected 17 tools.
 	names := make(map[string]bool)
 	for _, tool := range tools {
 		toolMap, _ := tool.(map[string]any)
@@ -96,6 +96,7 @@ func TestMCPToolsList(t *testing.T) {
 		"mouse_move", "mouse_click", "mouse_drag", "mouse_scroll",
 		"keyboard_type", "keyboard_press",
 		"call_bound_method", "emit_event", "wait_for_event", "screenshot_dom",
+		"screenshot",
 	}
 	if len(tools) != len(expected) {
 		t.Errorf("expected exactly %d tools, got %d", len(expected), len(tools))
@@ -194,6 +195,27 @@ func TestMCPPanicRecovery(t *testing.T) {
 	result, _ := response["result"].(map[string]any)
 	if result["isError"] != true {
 		t.Errorf("expected isError=true after panic, got %v", result)
+	}
+}
+
+func TestMCPImageToolResult(t *testing.T) {
+	m := newTestMCPServer()
+	m.tools = append(m.tools, &mcpTool{
+		Name:   "image_tool",
+		Schema: mcpObjectSchema(nil, nil),
+		Handler: func(args map[string]any) (any, error) {
+			return mcpImage{MIMEType: "image/png", Data: []byte("png")}, nil
+		},
+	})
+	rec := postMCP(t, m, `{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"image_tool"}}`)
+	result, _ := decodeMCPResponse(t, rec)["result"].(map[string]any)
+	content, _ := result["content"].([]any)
+	if len(content) != 1 {
+		t.Fatalf("expected one content item, got %v", result)
+	}
+	item, _ := content[0].(map[string]any)
+	if item["type"] != "image" || item["mimeType"] != "image/png" || item["data"] != "cG5n" {
+		t.Errorf("expected base64 image content, got %v", item)
 	}
 }
 

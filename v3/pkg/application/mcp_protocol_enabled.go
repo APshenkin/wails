@@ -5,6 +5,7 @@ package application
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -270,8 +271,25 @@ func (m *mcpServer) handleToolCall(req *mcpJSONRPCRequest) (response *mcpJSONRPC
 	return mcpResultResponse(req.ID, mcpToolResult(result))
 }
 
+// mcpImage is a tool return value delivered to the client as MCP image content.
+type mcpImage struct {
+	MIMEType string
+	Data     []byte
+}
+
 // mcpToolResult converts a tool's return value into an MCP CallToolResult.
 func mcpToolResult(value any) map[string]any {
+	if image, ok := value.(mcpImage); ok {
+		return map[string]any{
+			"content": []map[string]any{{
+				"type":     "image",
+				"data":     base64.StdEncoding.EncodeToString(image.Data),
+				"mimeType": image.MIMEType,
+			}},
+			"isError": false,
+		}
+	}
+
 	var text string
 	switch v := value.(type) {
 	case nil:
