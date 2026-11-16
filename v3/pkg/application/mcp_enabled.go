@@ -54,6 +54,8 @@ type mcpServer struct {
 	pendingMu sync.Mutex
 	pending   map[string]mcpPendingEval
 
+	screenshotMu sync.Mutex
+
 	tools []*mcpTool
 }
 

@@ -8,6 +8,6 @@ import (
 )
 
 // mcpCaptureWindow is implemented for the macOS cgo backend only.
-func mcpCaptureWindow(_ Window, _ float64, _ time.Duration) ([]byte, error) {
+func mcpCaptureWindow(_ Window, _ mcpRect, _ float64, _, _ int, _ time.Duration) ([]byte, error) {
 	return nil, errors.New("screenshot is not implemented on this platform yet; use screenshot_dom")
 }

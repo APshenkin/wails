@@ -219,6 +219,27 @@ func TestMCPImageToolResult(t *testing.T) {
 	}
 }
 
+func TestMCPImageToolResultWithCaption(t *testing.T) {
+	m := newTestMCPServer()
+	m.tools = append(m.tools, &mcpTool{
+		Name:   "image_tool",
+		Schema: mcpObjectSchema(nil, nil),
+		Handler: func(args map[string]any) (any, error) {
+			return mcpImage{MIMEType: "image/png", Data: []byte("png"), Caption: `{"width":1}`}, nil
+		},
+	})
+	rec := postMCP(t, m, `{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"image_tool"}}`)
+	result, _ := decodeMCPResponse(t, rec)["result"].(map[string]any)
+	content, _ := result["content"].([]any)
+	if len(content) != 2 {
+		t.Fatalf("expected image and caption items, got %v", result)
+	}
+	caption, _ := content[1].(map[string]any)
+	if caption["type"] != "text" || caption["text"] != `{"width":1}` {
+		t.Errorf("expected the caption as a text item after the image, got %v", caption)
+	}
+}
+
 func TestMCPOriginAllowed(t *testing.T) {
 	cases := []struct {
 		origin  string
