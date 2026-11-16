@@ -20,6 +20,7 @@
         y: Math.round(window.innerHeight / 2),
         cursor: null,
         showCursor: true,
+        cursorHiddenUntil: 0,
         hovered: null,
         buttons: 0,
     };
@@ -35,6 +36,7 @@
         if (!state.showCursor) return null;
         let cursor = document.getElementById('__wails-mcp-cursor');
         if (cursor) {
+            cursor.style.visibility = cursorHidden() ? 'hidden' : '';
             state.cursor = cursor;
             return cursor;
         }
@@ -55,12 +57,23 @@
             filter: 'drop-shadow(1px 2px 3px rgba(0,0,0,0.45))',
             transition: 'opacity 0.2s ease',
             opacity: '0',
+            visibility: cursorHidden() ? 'hidden' : '',
         });
         (document.body || document.documentElement).appendChild(cursor);
         // Fade in on first use.
         requestAnimationFrame(() => { cursor.style.opacity = '1'; });
         state.cursor = cursor;
         return cursor;
+    }
+
+    function cursorHidden() {
+        return Date.now() < state.cursorHiddenUntil;
+    }
+
+    function hideCursorFor(ms) {
+        state.cursorHiddenUntil = Date.now() + ms;
+        const cursor = document.getElementById('__wails-mcp-cursor');
+        if (cursor) cursor.style.visibility = cursorHidden() ? 'hidden' : '';
     }
 
     function placeCursor(x, y) {
@@ -78,7 +91,7 @@
     }
 
     function ripple(x, y, colour) {
-        if (!state.showCursor) return;
+        if (!state.showCursor || cursorHidden()) return;
         const dot = document.createElement('div');
         Object.assign(dot.style, {
             position: 'fixed',
@@ -771,7 +784,7 @@
     }
 
     const api = {
-        run, move, click, drag, scroll, typeText, press, query, snapshot, describe,
+        run, move, click, drag, scroll, typeText, press, query, snapshot, describe, hideCursorFor,
         get cursor() { return { x: state.x, y: state.y }; },
     };
 

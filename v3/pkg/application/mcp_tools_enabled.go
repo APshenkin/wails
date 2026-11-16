@@ -3,13 +3,28 @@
 package application
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
+	"math"
 	"runtime"
 	"strconv"
 	"time"
 )
+
+const (
+	mcpScreenshotMaxSize   = 1568
+	mcpScreenshotMaxPixels = 1_150_000
+)
+
+type mcpRect struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
 
 // mcpTool is a single MCP tool: metadata plus its handler. Handlers return a
 // value that is JSON-encoded into the tool result, or an error which becomes
@@ -528,37 +543,129 @@ func (m *mcpServer) registerTools() {
 		},
 		{
 			Name: "screenshot",
-			Description: "Capture a pixel screenshot of the window's visible web content as a PNG image. " +
+			Description: "Capture a pixel screenshot of the window's visible web content, or of one element, " +
+				"as a PNG image. Whatever the window size, the scale is lowered until the image fits both " +
+				"max_size and max_pixels, so a full-window capture is a cheap overview, usually below 1 image " +
+				"pixel per CSS pixel; pass a selector to see one element in Retina detail. Before capturing " +
+				"it hides the MCP cursor and waits up to 1 s for running animations to finish. A text item " +
+				"after the image gives its width and height, scale (image pixels per CSS pixel), the CSS x/y " +
+				"of its top-left corner, and settled=false when an animation was still running: image point " +
+				"(px, py) is CSS (x + px / scale, y + py / scale). " +
 				"Use screenshot_dom when a structural outline is enough.",
 			Schema: mcpObjectSchema(nil, map[string]any{
+				"selector": mcpProp("string", "CSS selector of the element to capture. The first match is scrolled "+
+					"into view, which can scroll the page, and only its part inside the window viewport is "+
+					"captured. Defaults to the whole window."),
 				"scale": mcpProp("number", "Output pixels per point of the web view, between 0.1 and 4. "+
-					"Defaults to 1; pass the display scale factor (2 on Retina) for full detail."),
+					"Defaults to the display scale factor (2 on Retina); max_size and max_pixels lower any scale, "+
+					"the default and an explicit one alike."),
+				"max_size": mcpProp("number", fmt.Sprintf("Upper bound for the longest side of the image in "+
+					"pixels, between 16 and 2000. Defaults to %d.", mcpScreenshotMaxSize)),
+				"max_pixels": mcpProp("number", fmt.Sprintf("Upper bound for width times height of the image, "+
+					"at least 256. Defaults to %d.", mcpScreenshotMaxPixels)),
 				"window":     mcpWindowProp(),
 				"timeout_ms": mcpTimeoutProp(),
 			}),
-			Handler: func(args map[string]any) (any, error) {
-				name, _ := mcpArgString(args, "window")
-				window, err := m.resolveWindow(name)
-				if err != nil {
-					return nil, err
-				}
-
-				scale, ok := mcpArgFloat(args, "scale")
-				if !ok {
-					scale = 1
-				}
-				if scale < 0.1 || scale > 4 {
-					return nil, errors.New("scale must be between 0.1 and 4")
-				}
-
-				png, err := mcpCaptureWindow(window, scale, m.mcpEvalTimeout(args))
-				if err != nil {
-					return nil, err
-				}
-				return mcpImage{MIMEType: "image/png", Data: png}, nil
-			},
+			Handler: m.mcpScreenshot,
 		},
 	}
+}
+
+func (m *mcpServer) mcpScreenshot(args map[string]any) (any, error) {
+	name, _ := mcpArgString(args, "window")
+	window, err := m.resolveWindow(name)
+	if err != nil {
+		return nil, err
+	}
+
+	scale, hasScale := mcpArgFloat(args, "scale")
+	if hasScale && (scale < 0.1 || scale > 4) {
+		return nil, errors.New("scale must be between 0.1 and 4")
+	}
+
+	maxSize := mcpArgInt(args, "max_size", mcpScreenshotMaxSize)
+	if maxSize < 16 || maxSize > 2000 {
+		return nil, errors.New("max_size must be between 16 and 2000")
+	}
+
+	maxPixels := mcpArgInt(args, "max_pixels", mcpScreenshotMaxPixels)
+	if maxPixels < 256 {
+		return nil, errors.New("max_pixels must be at least 256")
+	}
+
+	m.screenshotMu.Lock()
+	defer m.screenshotMu.Unlock()
+
+	timeout := m.mcpEvalTimeout(args)
+	selector, _ := mcpArgString(args, "selector")
+
+	var view struct {
+		ViewportWidth float64  `json:"viewportWidth"`
+		Settled       bool     `json:"settled"`
+		Clip          *mcpRect `json:"clip"`
+	}
+	err = m.evalInto(window, fmt.Sprintf(`
+		const selector = %s;
+		const el = selector ? document.querySelector(selector) : null;
+		if (selector && !el) throw new Error('no element matches selector: ' + selector);
+
+		mcp.hideCursorFor(%d);
+		el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+		await Promise.race([
+			new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+			new Promise((resolve) => setTimeout(resolve, 100)),
+		]);
+
+		const running = () => (document.getAnimations?.() ?? []).filter((a) =>
+			a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime));
+		await Promise.race([
+			Promise.allSettled(running().map((a) => a.finished)),
+			new Promise((resolve) => setTimeout(resolve, 1000)),
+		]);
+
+		const view = { viewportWidth: innerWidth, settled: running().length === 0 };
+		if (!el) return view;
+
+		const r = el.getBoundingClientRect();
+		const x = Math.max(0, r.left), y = Math.max(0, r.top);
+		const right = Math.min(innerWidth, r.right), bottom = Math.min(innerHeight, r.bottom);
+		if (right <= x || bottom <= y) throw new Error('element has no visible area: ' + selector);
+		return { ...view, clip: { x, y, width: right - x, height: bottom - y } };`,
+		strconv.Quote(selector), (timeout+3*time.Second).Milliseconds()), timeout+time.Second, &view)
+	defer m.eval(window, "mcp.hideCursorFor(0);", 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	var clip mcpRect
+	cssWidth := view.ViewportWidth
+	if view.Clip != nil {
+		clip = *view.Clip
+		cssWidth = clip.Width
+	}
+
+	data, err := mcpCaptureWindow(window, clip, scale, maxSize, maxPixels, timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("the web view returned an unreadable snapshot: %w", err)
+	}
+
+	caption, err := json.Marshal(struct {
+		Width   int     `json:"width"`
+		Height  int     `json:"height"`
+		Scale   float64 `json:"scale"`
+		X       float64 `json:"x"`
+		Y       float64 `json:"y"`
+		Settled bool    `json:"settled"`
+	}{config.Width, config.Height, math.Round(float64(config.Width)/cssWidth*1000) / 1000, clip.X, clip.Y, view.Settled})
+	if err != nil {
+		return nil, err
+	}
+	return mcpImage{MIMEType: "image/png", Data: data, Caption: string(caption)}, nil
 }
 
 // mcpWindowControl implements the window_control tool.

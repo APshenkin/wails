@@ -10,7 +10,8 @@ package application
 
 extern void mcpScreenshotDone(unsigned int id, void* data, int length, char* error);
 
-static void mcpTakeScreenshot(void* nsWindow, unsigned int id, double scale) {
+static void mcpTakeScreenshot(void* nsWindow, unsigned int id, double scale, double maxSize,
+		double maxPixels, double x, double y, double width, double height) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		NSWindow<WailsWebviewWindow>* window = (NSWindow<WailsWebviewWindow>*)nsWindow;
 		WKWebView* webView = window.webView;
@@ -19,8 +20,25 @@ static void mcpTakeScreenshot(void* nsWindow, unsigned int id, double scale) {
 			return;
 		}
 
+		CGRect rect = webView.bounds;
+		if (width > 0 && height > 0) {
+			CGFloat zoom = 1;
+			if (@available(macOS 11.0, *)) {
+				zoom = webView.pageZoom;
+			}
+			rect = CGRectIntersection(CGRectMake(x * zoom, y * zoom, width * zoom, height * zoom), webView.bounds);
+			if (CGRectIsEmpty(rect)) {
+				mcpScreenshotDone(id, NULL, 0, "the element lies outside the web view");
+				return;
+			}
+		}
+
+		CGFloat outputScale = MIN(scale > 0 ? scale : window.backingScaleFactor,
+			MIN(maxSize / MAX(rect.size.width, rect.size.height), sqrt(maxPixels / (rect.size.width * rect.size.height))));
+
 		WKSnapshotConfiguration* config = [[[WKSnapshotConfiguration alloc] init] autorelease];
-		config.snapshotWidth = @(webView.bounds.size.width * scale / window.backingScaleFactor);
+		config.rect = rect;
+		config.snapshotWidth = @(rect.size.width * outputScale / window.backingScaleFactor);
 
 		[webView takeSnapshotWithConfiguration:config completionHandler:^(NSImage* image, NSError* error) {
 			if (image == nil) {
@@ -57,9 +75,7 @@ var (
 	mcpScreenshotPending = map[uint]chan mcpScreenshotResult{}
 )
 
-// mcpCaptureWindow renders the window's visible web content to PNG, at scale
-// output pixels per point of the web view.
-func mcpCaptureWindow(window Window, scale float64, timeout time.Duration) ([]byte, error) {
+func mcpCaptureWindow(window Window, clip mcpRect, scale float64, maxSize, maxPixels int, timeout time.Duration) ([]byte, error) {
 	native := window.NativeWindow()
 	if native == nil {
 		return nil, errors.New("window has no native handle")
@@ -78,7 +94,8 @@ func mcpCaptureWindow(window Window, scale float64, timeout time.Duration) ([]by
 		mcpScreenshotMu.Unlock()
 	}()
 
-	C.mcpTakeScreenshot(native, C.uint(id), C.double(scale))
+	C.mcpTakeScreenshot(native, C.uint(id), C.double(scale), C.double(maxSize), C.double(maxPixels),
+		C.double(clip.X), C.double(clip.Y), C.double(clip.Width), C.double(clip.Height))
 
 	select {
 	case result := <-done:

@@ -275,19 +275,21 @@ func (m *mcpServer) handleToolCall(req *mcpJSONRPCRequest) (response *mcpJSONRPC
 type mcpImage struct {
 	MIMEType string
 	Data     []byte
+	Caption  string
 }
 
 // mcpToolResult converts a tool's return value into an MCP CallToolResult.
 func mcpToolResult(value any) map[string]any {
 	if image, ok := value.(mcpImage); ok {
-		return map[string]any{
-			"content": []map[string]any{{
-				"type":     "image",
-				"data":     base64.StdEncoding.EncodeToString(image.Data),
-				"mimeType": image.MIMEType,
-			}},
-			"isError": false,
+		content := []map[string]any{{
+			"type":     "image",
+			"data":     base64.StdEncoding.EncodeToString(image.Data),
+			"mimeType": image.MIMEType,
+		}}
+		if image.Caption != "" {
+			content = append(content, map[string]any{"type": "text", "text": image.Caption})
 		}
+		return map[string]any{"content": content, "isError": false}
 	}
 
 	var text string
